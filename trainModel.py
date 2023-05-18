@@ -48,8 +48,8 @@ def preprocess_image(filename):
 # Train and save the model
 def train_and_save_model(X, y, model_path, first_time):
     # Convert arrays to numpy arrays
-    X = np.array(X)
-    y = np.array(y)
+    #X = np.array(X)
+    #y = np.array(y)
 
     print("X length: ", len(X), "   Y length: ", len(y))
 
@@ -65,8 +65,8 @@ def train_and_save_model(X, y, model_path, first_time):
         x = base_model.output
         #x = GlobalAveragePooling2D()(x)
         x = Flatten()(x)
-        x = Dense(2048, activation='relu')(x)
-        x = Dense(1024, activation='relu')(x)
+        x = Dense(512, activation='relu')(x)
+        x = Dense(256, activation='relu')(x)
         x = Dense(24, activation='relu')(x)
         predictions = Dense(3, activation='softmax')(x)
         model = Model(inputs=base_model.input, outputs=predictions)
@@ -100,7 +100,7 @@ def train_and_save_model(X, y, model_path, first_time):
 
 # Set a threshold for memory usage
 memory_threshold = 500  # Specify the memory threshold in MB
-n_files_threshold = 10000 # Specify the threshold of number of files
+n_files_threshold = 2000 # Specify the threshold of number of files
 file_count = 0
 
 # Load the image data and labels into numpy arrays
@@ -113,7 +113,7 @@ model_path = "sentiment_model_final.h5"
 # First time indication
 first_time = True
 
-for tweet_id in tweet_data['TWID']:
+for i, tweet_id in enumerate(tweet_data['TWID']):
     print("A verificar o tweet id: ", tweet_id)
     folder_path = 'F:/Toolkit/ComputacaoVisual/b-t4sa_imgs/data/'+str(tweet_id)[0:5]+'/'
 
@@ -137,7 +137,7 @@ for tweet_id in tweet_data['TWID']:
 
     # Check memory consumption every specified interval
     # if memory_usage > memory_threshold:
-    if file_count >= n_files_threshold:
+    if file_count >= n_files_threshold or (i == (len(tweet_data['TWID'])-1) and len(X) >= 2000):
         if first_time == True:
             train_and_save_model(np.array(X), np.array(y), model_path, True)
             first_time = False
