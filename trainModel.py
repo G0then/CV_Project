@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+import random
 import cv2
 from keras.models import Model, load_model
 from keras.layers import Dense, GlobalAveragePooling2D, Flatten
@@ -9,16 +10,42 @@ from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 import psutil
 
-
-
 # Define the fixed image size for input into the VGG CNN
 IMG_SIZE = (224, 224)
 
-# Load the data into a pandas dataframe
-tweet_data = pd.read_csv('F:/Toolkit/ComputacaoVisual/t4sa_text_sentiment.tsv', delimiter='\t')
+# Set the path to your dataset and text file
+dataset_path = 'F:/Toolkit/ComputacaoVisual/Images_with_CC/bi_concepts1553/'
+txt_file = 'F:/Toolkit/ComputacaoVisual/3244ANPs.txt'
 
-# Shuffle the tweet data
-tweet_data = shuffle(tweet_data)
+# Load the ANP data from the text file
+anp_data = []
+with open(txt_file, 'r') as file:
+    lines = file.readlines()
+    for line in lines:
+        if line.startswith('\t'):
+            line = line.replace('[', '').replace(']', '')
+            row = line.strip().split()
+            anp_data.append(row)
+
+# Create a mapping between ANP names and sentiment scores
+anp_sentiment_mapping = {}
+for row in anp_data:
+    if len(row) == 5:
+        anp = row[0]
+        sentiment = float(row[2])
+        anp_sentiment_mapping[anp] = sentiment
+
+# Convert mapping to a list of key-value pairs
+mapping_list = list(anp_sentiment_mapping.items())
+
+# Shuffle the list
+random.shuffle(mapping_list)
+
+# Convert the shuffled list back to a dictionary
+shuffled_anp_sentiment_mapping = dict(mapping_list)
+
+teste = len(shuffled_anp_sentiment_mapping)
+print("teste")
 
 # Preprocess the images
 def preprocess_image(filename):
@@ -65,10 +92,10 @@ def train_and_save_model(X, y, model_path, first_time):
         x = base_model.output
         #x = GlobalAveragePooling2D()(x)
         x = Flatten()(x)
-        x = Dense(512, activation='relu')(x)
         x = Dense(256, activation='relu')(x)
         x = Dense(24, activation='relu')(x)
-        predictions = Dense(3, activation='softmax')(x)
+        #predictions = Dense(3, activation='softmax')(x) # For Classification
+        predictions = Dense(1, activation='linear')(x) # For Regression
         model = Model(inputs=base_model.input, outputs=predictions)
 
         # Freeze the layers in the base model, so it prevents that pre-trained VGG16 CNN model weights from being updated during the training process
@@ -76,7 +103,8 @@ def train_and_save_model(X, y, model_path, first_time):
             layer.trainable = False
 
         # Compile
-        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        #model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy']) # For Classification
+        model.compile(optimizer='adam', loss='mse', metrics=['RootMeanSquaredError']) # For Regression
     else:
         # Load the existing model
         model = load_model(model_path)
@@ -113,42 +141,45 @@ model_path = "sentiment_model_final.h5"
 # First time indication
 first_time = True
 
-for i, tweet_id in enumerate(tweet_data['TWID']):
-    print("A verificar o tweet id: ", tweet_id)
-    folder_path = 'F:/Toolkit/ComputacaoVisual/b-t4sa_imgs/data/'+str(tweet_id)[0:5]+'/'
+for i, anp in enumerate(shuffled_anp_sentiment_mapping):
+    print("A verificar o ANP: ", anp)
+    anp_folder_path = dataset_path + anp + '/'
+    anp_sentiment = shuffled_anp_sentiment_mapping[anp]
 
     # Check if the folder exists (because some folder doesnt exist)
-    if not os.path.exists(folder_path):
-        print(f"Folder does not exist: {folder_path}")
+    if not os.path.exists(anp_folder_path):
+        print(f"Folder does not exist: {anp_folder_path}")
         continue
 
-    for file_name in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, file_name)
-        if str(tweet_id) in file_name and ("person" not in file_name) and os.path.isfile(file_path):
-            X.append(preprocess_image(file_path))
-            y.append([tweet_data.loc[tweet_data['TWID']==tweet_id, 'NEG'].values[0],
-                      tweet_data.loc[tweet_data['TWID']==tweet_id, 'NEU'].values[0],
-                      tweet_data.loc[tweet_data['TWID']==tweet_id, 'POS'].values[0]])
-            file_count += 1
+    # Iterate over image files
+    for file_name in os.listdir(anp_folder_path):
+        # Iterate only over images files
+        if file_name.endswith(('.jpg', '.jpeg', '.png')):
+            file_path = os.path.join(anp_folder_path, file_name)
+            if ("person" not in file_name) and os.path.isfile(file_path):
+                X.append(preprocess_image(file_path))
+                y.append(anp_sentiment)
+                file_count += 1
 
-    process = psutil.Process(os.getpid())
-    memory_usage = process.memory_info().rss / 1024 / 1024  # Memory usage in MB
-    print(f"Files {file_count} - Current memory usage: {memory_usage} MB")
+                # Check memory consumption
+                process = psutil.Process(os.getpid())
+                memory_usage = process.memory_info().rss / 1024 / 1024  # Memory usage in MB
+                print(f"Files {file_count} - Current memory usage: {memory_usage} MB")
 
-    # Check memory consumption every specified interval
-    # if memory_usage > memory_threshold:
-    if file_count >= n_files_threshold or (i == (len(tweet_data['TWID'])-1) and len(X) >= 2000):
-        if first_time == True:
-            train_and_save_model(np.array(X), np.array(y), model_path, True)
-            first_time = False
-        else:
-            train_and_save_model(np.array(X), np.array(y), model_path, False)
+                # Check number of files or memory threshold was exceeded
+                # if memory_usage > memory_threshold:
+                if file_count >= n_files_threshold or (i == (len(shuffled_anp_sentiment_mapping) - 1) and len(X) >= 2000):
+                    if first_time == True:
+                        train_and_save_model(np.array(X), np.array(y), model_path, True)
+                        first_time = False
+                    else:
+                        train_and_save_model(np.array(X), np.array(y), model_path, False)
 
-        # Clear X and y to release memory
-        X = []
-        y = []
-        #Reset counter
-        file_count = 0
+                    # Clear X and y to release memory
+                    X = []
+                    y = []
+                    # Reset counter
+                    file_count = 0
 
 # Train and save the final model
 #model_path = "sentiment_model_final.h5"
