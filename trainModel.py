@@ -8,6 +8,7 @@ from keras.layers import Dense, GlobalAveragePooling2D, Flatten
 from keras.applications.vgg16 import VGG16
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+import matplotlib.pyplot as plt
 import psutil
 
 # Define the fixed image size for input into the VGG CNN
@@ -72,17 +73,44 @@ def preprocess_image(filename):
         print(str(e))
         return None
 
+def plot_training_curves(history, save_path=None):
+    # Get the training and validation loss values
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+
+    # Get the training and validation MSE values
+    mse = history.history['mse']
+    val_mse = history.history['val_mse']
+
+    # Plot the training and validation loss curves
+    epochs = range(1, len(loss) + 1)
+    plt.plot(epochs, loss, 'b', label='Training Loss')
+    plt.plot(epochs, val_loss, 'r', label='Validation Loss')
+    plt.plot(epochs, mse, 'g', label='Training MSE')
+    plt.plot(epochs, val_mse, 'm', label='Validation MSE')
+    plt.title('Training and Validation Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss/MSE')
+    plt.legend()
+
+    # Save the plot to a file if save_path is provided
+    if save_path is not None:
+        plt.savefig(save_path)
+
+    plt.show()
+
+
 # Train and save the model
 def train_and_save_model(X, y, model_path, first_time):
     # Convert arrays to numpy arrays
-    #X = np.array(X)
-    #y = np.array(y)
+    X = np.array(X)
+    y = np.array(y)
 
     print("X length: ", len(X), "   Y length: ", len(y))
 
     # Create training, validation and testing datasets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42)
 
     if first_time == True:
         # Load the pre-trained VGG16 model
@@ -92,6 +120,7 @@ def train_and_save_model(X, y, model_path, first_time):
         x = base_model.output
         #x = GlobalAveragePooling2D()(x)
         x = Flatten()(x)
+        x = Dense(512, activation='relu')(x)
         x = Dense(256, activation='relu')(x)
         x = Dense(24, activation='relu')(x)
         #predictions = Dense(3, activation='softmax')(x) # For Classification
@@ -99,7 +128,7 @@ def train_and_save_model(X, y, model_path, first_time):
         model = Model(inputs=base_model.input, outputs=predictions)
 
         # Freeze the layers in the base model, so it prevents that pre-trained VGG16 CNN model weights from being updated during the training process
-        for layer in base_model.layers[:]:
+        for layer in base_model.layers[:-8]:
             layer.trainable = False
 
         # Compile
@@ -115,7 +144,8 @@ def train_and_save_model(X, y, model_path, first_time):
     #X_test = np.transpose(X_test, (0, 2, 3, 1))
 
     # Fit model
-    model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_val, y_val))
+    history = model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_val, y_val))
+    plot_training_curves(history, save_path='training_curves.png')
 
     # Evaluate the performance of the model using test dataset
     loss, accuracy = model.evaluate(X_test, y_test)
@@ -128,7 +158,7 @@ def train_and_save_model(X, y, model_path, first_time):
 
 # Set a threshold for memory usage
 memory_threshold = 500  # Specify the memory threshold in MB
-n_files_threshold = 2000 # Specify the threshold of number of files
+n_files_threshold = 1600 # Specify the threshold of number of files
 file_count = 0
 
 # Load the image data and labels into numpy arrays
@@ -136,7 +166,7 @@ X = []
 y = []
 
 #Model Path
-model_path = "sentiment_model_final.h5"
+model_path = "sentiment_model.h5"
 
 # First time indication
 first_time = True
@@ -145,21 +175,28 @@ for i, anp in enumerate(shuffled_anp_sentiment_mapping):
     print("A verificar o ANP: ", anp)
     anp_folder_path = dataset_path + anp + '/'
     anp_sentiment = shuffled_anp_sentiment_mapping[anp]
+    category_count = 0
 
     # Check if the folder exists (because some folder doesnt exist)
-    if not os.path.exists(anp_folder_path):
+    if not os.path.exists(anp_folder_path) or (anp != "beautiful_sky" and anp != "falling_rain"):
         print(f"Folder does not exist: {anp_folder_path}")
         continue
 
     # Iterate over image files
     for file_name in os.listdir(anp_folder_path):
+        if category_count >= 800:
+            break
         # Iterate only over images files
         if file_name.endswith(('.jpg', '.jpeg', '.png')):
             file_path = os.path.join(anp_folder_path, file_name)
             if ("person" not in file_name) and os.path.isfile(file_path):
-                X.append(preprocess_image(file_path))
-                y.append(anp_sentiment)
-                file_count += 1
+                image_preprocessed = preprocess_image(file_path)
+                #To maake sure
+                if image_preprocessed is not None:
+                    X.append(preprocess_image(file_path))
+                    y.append(anp_sentiment)
+                    category_count += 1
+                    file_count += 1
 
                 # Check memory consumption
                 process = psutil.Process(os.getpid())
@@ -170,10 +207,10 @@ for i, anp in enumerate(shuffled_anp_sentiment_mapping):
                 # if memory_usage > memory_threshold:
                 if file_count >= n_files_threshold or (i == (len(shuffled_anp_sentiment_mapping) - 1) and len(X) >= 2000):
                     if first_time == True:
-                        train_and_save_model(np.array(X), np.array(y), model_path, True)
+                        train_and_save_model(X, y, model_path, True)
                         first_time = False
                     else:
-                        train_and_save_model(np.array(X), np.array(y), model_path, False)
+                        train_and_save_model(X, y, model_path, False)
 
                     # Clear X and y to release memory
                     X = []
@@ -182,5 +219,5 @@ for i, anp in enumerate(shuffled_anp_sentiment_mapping):
                     file_count = 0
 
 # Train and save the final model
-#model_path = "sentiment_model_final.h5"
+#model_path = "sentiment_model.h5"
 #train_and_save_model(X, y, model_path)

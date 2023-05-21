@@ -28,17 +28,27 @@ def predict_sentiment(filename):
     # Add an extra dimension to the image array to match the input shape expected by the model
     input_img = np.expand_dims(input_img, axis=0)
     # Make a prediction with the imported model created in "trainModel.py"
-    prediction = model.predict(input_img)[0]
+    # prediction = model.predict(input_img)[0] # For Classification
+    prediction = model.predict(input_img) # For Regression
     # Create a dictionary of sentiment percentages
-    sentiment_percentages = {
-        'negative': prediction[0],
-        'neutral': prediction[1],
-        'positive': prediction[2]
-    }
+    #sentiment_percentages = {
+    #    'negative': prediction[0],
+    #    'neutral': prediction[1],
+    #    'positive': prediction[2]
+    #}
     # Return the sentiment percentages dictionary
-    return sentiment_percentages
+    return prediction
+
+def get_sentiment_label(sentiment_percentage):
+    if sentiment_percentage >= 0.75:
+        return "Positive"
+    elif sentiment_percentage <= -0.75:
+        return "Negative"
+    else:
+        return "Neutral"
 
 # Predict
-filename = 'images/test.jpg'
+filename = 'images/rain3.jpg'
 sentiment_percentages = predict_sentiment(filename)
+#sentiment_label = get_sentiment_label(sentiment_percentages)
 print(sentiment_percentages)
