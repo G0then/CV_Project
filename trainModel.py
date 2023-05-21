@@ -4,11 +4,12 @@ import pandas as pd
 import random
 import cv2
 from keras.models import Model, load_model
-from keras.layers import Dense, GlobalAveragePooling2D, Flatten
+from keras.layers import Dense, GlobalAveragePooling2D, Flatten, Dropout
 from keras.applications.vgg16 import VGG16
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 import matplotlib.pyplot as plt
+import tensorflow as tf
 import psutil
 
 # Define the fixed image size for input into the VGG CNN
@@ -78,16 +79,16 @@ def plot_training_curves(history, save_path=None):
     loss = history.history['loss']
     val_loss = history.history['val_loss']
 
-    # Get the training and validation MSE values
-    mse = history.history['mse']
-    val_mse = history.history['val_mse']
+    # Get the training and validation RMSE values
+    rmse = history.history['root_mean_squared_error']
+    val_rmse = history.history['val_root_mean_squared_error']
 
     # Plot the training and validation loss curves
     epochs = range(1, len(loss) + 1)
     plt.plot(epochs, loss, 'b', label='Training Loss')
     plt.plot(epochs, val_loss, 'r', label='Validation Loss')
-    plt.plot(epochs, mse, 'g', label='Training MSE')
-    plt.plot(epochs, val_mse, 'm', label='Validation MSE')
+    plt.plot(epochs, rmse, 'g', label='Training RMSE')
+    plt.plot(epochs, val_rmse, 'm', label='Validation RMSE')
     plt.title('Training and Validation Curves')
     plt.xlabel('Epochs')
     plt.ylabel('Loss/MSE')
@@ -110,7 +111,7 @@ def train_and_save_model(X, y, model_path, first_time):
 
     # Create training, validation and testing datasets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
     if first_time == True:
         # Load the pre-trained VGG16 model
@@ -121,19 +122,23 @@ def train_and_save_model(X, y, model_path, first_time):
         #x = GlobalAveragePooling2D()(x)
         x = Flatten()(x)
         x = Dense(512, activation='relu')(x)
-        x = Dense(256, activation='relu')(x)
+        x = Dense(512, activation='relu')(x)
         x = Dense(24, activation='relu')(x)
+        #x = Dropout(0.5)(x)
         #predictions = Dense(3, activation='softmax')(x) # For Classification
         predictions = Dense(1, activation='linear')(x) # For Regression
         model = Model(inputs=base_model.input, outputs=predictions)
 
         # Freeze the layers in the base model, so it prevents that pre-trained VGG16 CNN model weights from being updated during the training process
-        for layer in base_model.layers[:-8]:
+        for layer in base_model.layers[:-4]:
             layer.trainable = False
+
+        #optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+        optimizer = tf.keras.optimizers.SGD(learning_rate=1e-3)
 
         # Compile
         #model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy']) # For Classification
-        model.compile(optimizer='adam', loss='mse', metrics=['RootMeanSquaredError']) # For Regression
+        model.compile(optimizer=optimizer, loss='mse', metrics=['RootMeanSquaredError']) # For Regression
     else:
         # Load the existing model
         model = load_model(model_path)
@@ -144,7 +149,7 @@ def train_and_save_model(X, y, model_path, first_time):
     #X_test = np.transpose(X_test, (0, 2, 3, 1))
 
     # Fit model
-    history = model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_val, y_val))
+    history = model.fit(X_train, y_train, epochs=10, batch_size=4, validation_data=(X_val, y_val))
     plot_training_curves(history, save_path='training_curves.png')
 
     # Evaluate the performance of the model using test dataset
