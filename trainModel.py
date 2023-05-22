@@ -80,18 +80,25 @@ def plot_training_curves(history, save_path=None):
     val_loss = history.history['val_loss']
 
     # Get the training and validation RMSE values
-    rmse = history.history['root_mean_squared_error']
-    val_rmse = history.history['val_root_mean_squared_error']
+    #rmse = history.history['root_mean_squared_error']
+    #val_rmse = history.history['val_root_mean_squared_error']
+
+    # Get the training and validation accuracy values
+    accuracy = history.history['accuracy']
+    val_accuracy = history.history['val_accuracy']
 
     # Plot the training and validation loss curves
     epochs = range(1, len(loss) + 1)
     plt.plot(epochs, loss, 'b', label='Training Loss')
     plt.plot(epochs, val_loss, 'r', label='Validation Loss')
-    plt.plot(epochs, rmse, 'g', label='Training RMSE')
-    plt.plot(epochs, val_rmse, 'm', label='Validation RMSE')
+    #plt.plot(epochs, rmse, 'g', label='Training RMSE')
+    #plt.plot(epochs, val_rmse, 'm', label='Validation RMSE')
+    plt.plot(epochs, accuracy, 'g', label='Training Accuracy')
+    plt.plot(epochs, val_accuracy, 'm', label='Validation Accuracy')
     plt.title('Training and Validation Curves')
     plt.xlabel('Epochs')
-    plt.ylabel('Loss/MSE')
+    #plt.ylabel('Loss/RMSE')
+    plt.ylabel('Loss/Accuracy')
     plt.legend()
 
     # Save the plot to a file if save_path is provided
@@ -99,7 +106,6 @@ def plot_training_curves(history, save_path=None):
         plt.savefig(save_path)
 
     plt.show()
-
 
 # Train and save the model
 def train_and_save_model(X, y, model_path, first_time):
@@ -121,24 +127,24 @@ def train_and_save_model(X, y, model_path, first_time):
         x = base_model.output
         #x = GlobalAveragePooling2D()(x)
         x = Flatten()(x)
-        x = Dense(512, activation='relu')(x)
-        x = Dense(512, activation='relu')(x)
+        x = Dense(1024, activation='relu')(x)
+        x = Dense(1024, activation='relu')(x)
         x = Dense(24, activation='relu')(x)
-        #x = Dropout(0.5)(x)
-        #predictions = Dense(3, activation='softmax')(x) # For Classification
-        predictions = Dense(1, activation='linear')(x) # For Regression
+        x = Dropout(0.5)(x)
+        predictions = Dense(3, activation='softmax')(x) # For Classification
+        #predictions = Dense(1, activation='linear')(x) # For Regression
         model = Model(inputs=base_model.input, outputs=predictions)
 
         # Freeze the layers in the base model, so it prevents that pre-trained VGG16 CNN model weights from being updated during the training process
-        for layer in base_model.layers[:-4]:
+        for layer in base_model.layers[:-8]:
             layer.trainable = False
 
         #optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
         optimizer = tf.keras.optimizers.SGD(learning_rate=1e-3)
 
         # Compile
-        #model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy']) # For Classification
-        model.compile(optimizer=optimizer, loss='mse', metrics=['RootMeanSquaredError']) # For Regression
+        model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy']) # For Classification
+        #model.compile(optimizer=optimizer, loss='mse', metrics=['RootMeanSquaredError']) # For Regression
     else:
         # Load the existing model
         model = load_model(model_path)
@@ -160,6 +166,13 @@ def train_and_save_model(X, y, model_path, first_time):
     # Save model
     model.save(model_path)
 
+def get_sentiment_label(sentiment_percentage):
+    if sentiment_percentage >= 0.5: # Positive sentiment
+        return [0,0,1]
+    elif sentiment_percentage <= -0.5: # Negative sentiment
+        return [1,0,0]
+    else: # Neutral sentiment
+        return [0,1,0]
 
 # Set a threshold for memory usage
 memory_threshold = 500  # Specify the memory threshold in MB
@@ -179,7 +192,7 @@ first_time = True
 for i, anp in enumerate(shuffled_anp_sentiment_mapping):
     print("A verificar o ANP: ", anp)
     anp_folder_path = dataset_path + anp + '/'
-    anp_sentiment = shuffled_anp_sentiment_mapping[anp]
+    anp_sentiment = get_sentiment_label(shuffled_anp_sentiment_mapping[anp])
     category_count = 0
 
     # Check if the folder exists (because some folder doesnt exist)
