@@ -127,7 +127,7 @@ def train_and_save_model(X, y, model_path, first_time):
         x = base_model.output
         #x = GlobalAveragePooling2D()(x)
         x = Flatten()(x)
-        x = Dense(1024, activation='relu')(x)
+        x = Dense(2048, activation='relu')(x)
         x = Dense(1024, activation='relu')(x)
         x = Dense(24, activation='relu')(x)
         x = Dropout(0.5)(x)

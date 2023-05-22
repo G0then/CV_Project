@@ -9,6 +9,9 @@ IMG_SIZE = (224, 224)
 # Load the trained model
 model = load_model('sentiment_model.h5')
 
+#Treshold
+sentiment_threshold = 0.7
+
 # Preprocess image for input into the model
 def preprocess_image(filename):
     # Load the image file
@@ -28,27 +31,33 @@ def predict_sentiment(filename):
     # Add an extra dimension to the image array to match the input shape expected by the model
     input_img = np.expand_dims(input_img, axis=0)
     # Make a prediction with the imported model created in "trainModel.py"
-    # prediction = model.predict(input_img)[0] # For Classification
-    prediction = model.predict(input_img) # For Regression
+    prediction = model.predict(input_img)[0] # For Classification
+    #prediction = model.predict(input_img) # For Regression
     # Create a dictionary of sentiment percentages
-    #sentiment_percentages = {
-    #    'negative': prediction[0],
-    #    'neutral': prediction[1],
-    #    'positive': prediction[2]
-    #}
+    sentiment_percentages = {
+        'negative': prediction[0],
+        'neutral': prediction[1],
+        'positive': prediction[2]
+    }
     # Return the sentiment percentages dictionary
-    return prediction
+    return sentiment_percentages
 
 def get_sentiment_label(sentiment_percentage):
-    if sentiment_percentage >= 0.75:
+    if sentiment_percentage >= 0.5:
         return "Positive"
-    elif sentiment_percentage <= -0.75:
+    elif sentiment_percentage <= -0.5:
         return "Negative"
     else:
         return "Neutral"
 
 # Predict
-filename = 'images/rain3.jpg'
+filename = 'images/sky2.jpg'
 sentiment_percentages = predict_sentiment(filename)
 #sentiment_label = get_sentiment_label(sentiment_percentages)
 print(sentiment_percentages)
+
+max_sentiment = max(sentiment_percentages, key=sentiment_percentages.get)
+
+if sentiment_percentages[max_sentiment] >= sentiment_threshold:
+    print("Sentiment " + max_sentiment + " detected in image!")
+
