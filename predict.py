@@ -42,6 +42,7 @@ def predict_sentiment(filename):
     # Return the sentiment percentages dictionary
     return sentiment_percentages
 
+# Convert sentiment values (-2 to 2) in sentiment classification labels
 def get_sentiment_label(sentiment_percentage):
     if sentiment_percentage >= 0.5:
         return "Positive"
@@ -56,8 +57,10 @@ sentiment_percentages = predict_sentiment(filename)
 #sentiment_label = get_sentiment_label(sentiment_percentages)
 print(sentiment_percentages)
 
+# Best sentiment predicted
 max_sentiment = max(sentiment_percentages, key=sentiment_percentages.get)
 
+# Verify is best sentiment predicted value is higher than threshold
 if sentiment_percentages[max_sentiment] >= sentiment_threshold:
     print("Sentiment " + max_sentiment + " detected in image!")
 

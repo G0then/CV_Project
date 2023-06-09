@@ -17,37 +17,51 @@ IMG_SIZE = (224, 224)
 
 # Set the path to your dataset and text file
 dataset_path = 'F:/Toolkit/ComputacaoVisual/Images_with_CC/bi_concepts1553/'
-txt_file = 'F:/Toolkit/ComputacaoVisual/3244ANPs.txt'
+dataset_anps = 'flickr_final_dataset_summary.csv'
 
-# Load the ANP data from the text file
-anp_data = []
-with open(txt_file, 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        if line.startswith('\t'):
-            line = line.replace('[', '').replace(']', '')
-            row = line.strip().split()
-            anp_data.append(row)
+# Load form CSVs file
+df_anps = pd.read_csv(dataset_anps)
 
-# Create a mapping between ANP names and sentiment scores
-anp_sentiment_mapping = {}
-for row in anp_data:
-    if len(row) == 5:
-        anp = row[0]
-        sentiment = float(row[2])
-        anp_sentiment_mapping[anp] = sentiment
 
-# Convert mapping to a list of key-value pairs
-mapping_list = list(anp_sentiment_mapping.items())
+# Convert sentiment regression values (-2 to 2) in sentiment classification problem
+def get_sentiment_label(sentiment_percentage):
+    if sentiment_percentage >= 0.5: # Positive sentiment
+        return [0,0,1]
+    elif sentiment_percentage <= -0.5: # Negative sentiment
+        return [1,0,0]
+    else: # Neutral sentiment
+        return [0,1,0]
 
-# Shuffle the list
-random.shuffle(mapping_list)
 
-# Convert the shuffled list back to a dictionary
-shuffled_anp_sentiment_mapping = dict(mapping_list)
+# create an Empty DataFrame object
+df = pd.DataFrame(columns = ['File Path', 'Sentiment'])
 
-teste = len(shuffled_anp_sentiment_mapping)
-print("teste")
+# Loop through ANPs
+for i, row in df_anps.iterrows():
+    print("A verificar o ANP: ", row["Folder Name"])
+    anp_folder_path = dataset_path + row["Folder Name"] + '/'
+    anp_sentiment = get_sentiment_label(row["Sentiment"])
+
+    # Check if the folder exists (because some folder doesnt exist)
+    if not os.path.exists(anp_folder_path):
+        print(f"Folder does not exist: {anp_folder_path}")
+        continue
+
+    # Iterate over image files
+    for file_name in os.listdir(anp_folder_path):
+        if file_name.endswith(('.jpg', '.jpeg', '.png')):
+            file_path = os.path.join(anp_folder_path, file_name)
+            # Insert Dict to the dataframe
+            new_row = {'File Path': file_path, 'Sentiment': anp_sentiment}
+            df.loc[len(df)] = new_row
+
+# Shuffle files
+df = shuffle(df)
+
+print("Df Shape: ", df.shape)
+
+# Delete df_anps from memory
+del df_anps
 
 # Preprocess the images
 def preprocess_image(filename):
@@ -64,7 +78,11 @@ def preprocess_image(filename):
         resized_img = cv2.resize(img, IMG_SIZE)
 
         # Normalize pixel values to be between 0 and 1
-        normalized_img = resized_img.astype('float32') / 255.0
+        normalized_img = resized_img.astype('float32') / 255.
+
+        # Check if the image shape matches the expected shape
+        if normalized_img.shape != (224, 224, 3):
+            return None
 
         # Transpose the image to match the input format expected by the VGG CNN
         # input_img = np.transpose(normalized_img, (2, 0, 1))
@@ -105,10 +123,37 @@ def plot_training_curves(history, save_path=None):
     if save_path is not None:
         plt.savefig(save_path)
 
-    plt.show()
+    #plt.show()
 
-# Train and save the model
-def train_and_save_model(X, y, model_path, first_time):
+##### Base Model #####
+# Load the pre-trained VGG16 model
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3))
+
+# Add a new fully connected layers to the model for classification
+x = base_model.output
+#x = GlobalAveragePooling2D()(x)
+x = Flatten()(x)
+#x = Dense(2048, activation='relu')(x)
+#x = Dense(1024, activation='relu')(x)
+x = Dense(24, activation='relu')(x)
+x = Dropout(0.5)(x)
+predictions = Dense(3, activation='softmax')(x) # For Classification
+#predictions = Dense(1, activation='linear')(x) # For Regression
+model = Model(inputs=base_model.input, outputs=predictions)
+
+# Freeze the layers in the base model, so it prevents that pre-trained VGG16 CNN model weights from being updated during the training process
+for layer in base_model.layers[:-8]:
+    layer.trainable = False
+
+#optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+optimizer = tf.keras.optimizers.SGD(learning_rate=1e-3)
+
+# Compile
+model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy']) # For Classification
+#model.compile(optimizer=optimizer, loss='mse', metrics=['RootMeanSquaredError']) # For Regression
+
+# Split data into train, validation and test data
+def split_data(X, y):
     # Convert arrays to numpy arrays
     X = np.array(X)
     y = np.array(y)
@@ -119,40 +164,26 @@ def train_and_save_model(X, y, model_path, first_time):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
-    if first_time == True:
-        # Load the pre-trained VGG16 model
-        base_model = VGG16(weights='imagenet', include_top=False, input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3))
-
-        # Add a new fully connected layers to the model for classification
-        x = base_model.output
-        #x = GlobalAveragePooling2D()(x)
-        x = Flatten()(x)
-        x = Dense(2048, activation='relu')(x)
-        x = Dense(1024, activation='relu')(x)
-        x = Dense(24, activation='relu')(x)
-        x = Dropout(0.5)(x)
-        predictions = Dense(3, activation='softmax')(x) # For Classification
-        #predictions = Dense(1, activation='linear')(x) # For Regression
-        model = Model(inputs=base_model.input, outputs=predictions)
-
-        # Freeze the layers in the base model, so it prevents that pre-trained VGG16 CNN model weights from being updated during the training process
-        for layer in base_model.layers[:-8]:
-            layer.trainable = False
-
-        #optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-        optimizer = tf.keras.optimizers.SGD(learning_rate=1e-3)
-
-        # Compile
-        model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy']) # For Classification
-        #model.compile(optimizer=optimizer, loss='mse', metrics=['RootMeanSquaredError']) # For Regression
-    else:
-        # Load the existing model
-        model = load_model(model_path)
-
     # Transpose input data
-    #X_train = np.transpose(X_train, (0, 2, 3, 1))
-    #X_val = np.transpose(X_val, (0, 2, 3, 1))
-    #X_test = np.transpose(X_test, (0, 2, 3, 1))
+    # X_train = np.transpose(X_train, (0, 2, 3, 1))
+    # X_val = np.transpose(X_val, (0, 2, 3, 1))
+    # X_test = np.transpose(X_test, (0, 2, 3, 1))
+
+    # Monitorizar os dados aqui
+    print("Monitorizar os dados:")
+    print("X_train: ", X_train.shape)
+    print("y_train: ", y_train.shape)
+    print("X_val: ", X_val.shape)
+    print("y_val: ", y_val.shape)
+    print("X_test: ", X_test.shape)
+    print("y_test: ", y_test.shape)
+
+    return (X_train, y_train, X_val, y_val, X_test, y_test)
+
+
+# Train and save the model
+def train_and_save_model(data, model_path):
+    (X_train, y_train, X_val, y_val, X_test, y_test) = data
 
     # Fit model
     history = model.fit(X_train, y_train, epochs=10, batch_size=4, validation_data=(X_val, y_val))
@@ -166,75 +197,49 @@ def train_and_save_model(X, y, model_path, first_time):
     # Save model
     model.save(model_path)
 
-def get_sentiment_label(sentiment_percentage):
-    if sentiment_percentage >= 0.5: # Positive sentiment
-        return [0,0,1]
-    elif sentiment_percentage <= -0.5: # Negative sentiment
-        return [1,0,0]
-    else: # Neutral sentiment
-        return [0,1,0]
 
 # Set a threshold for memory usage
-memory_threshold = 500  # Specify the memory threshold in MB
-n_files_threshold = 1600 # Specify the threshold of number of files
+memory_threshold = 6000  # Specify the memory threshold in MB
+n_files_threshold = 100000  # Specify the threshold of number of files
 file_count = 0
 
 # Load the image data and labels into numpy arrays
 X = []
 y = []
+data = []
 
-#Model Path
+# Model Path
 model_path = "sentiment_model.h5"
 
-# First time indication
-first_time = True
+for i, row in df.iterrows():
+    print("A verificar o ANP: ", row["File Path"])
 
-for i, anp in enumerate(shuffled_anp_sentiment_mapping):
-    print("A verificar o ANP: ", anp)
-    anp_folder_path = dataset_path + anp + '/'
-    anp_sentiment = get_sentiment_label(shuffled_anp_sentiment_mapping[anp])
-    category_count = 0
-
-    # Check if the folder exists (because some folder doesnt exist)
-    if not os.path.exists(anp_folder_path) or (anp != "beautiful_sky" and anp != "falling_rain"):
-        print(f"Folder does not exist: {anp_folder_path}")
+    image_preprocessed = preprocess_image(row["File Path"])
+    # To make sure
+    if image_preprocessed is not None:
+        X.append(image_preprocessed)
+        y.append(row["Sentiment"])
+        file_count += 1
+    else:
         continue
 
-    # Iterate over image files
-    for file_name in os.listdir(anp_folder_path):
-        if category_count >= 800:
-            break
-        # Iterate only over images files
-        if file_name.endswith(('.jpg', '.jpeg', '.png')):
-            file_path = os.path.join(anp_folder_path, file_name)
-            if ("person" not in file_name) and os.path.isfile(file_path):
-                image_preprocessed = preprocess_image(file_path)
-                #To maake sure
-                if image_preprocessed is not None:
-                    X.append(preprocess_image(file_path))
-                    y.append(anp_sentiment)
-                    category_count += 1
-                    file_count += 1
+    # Check memory consumption
+    process = psutil.Process(os.getpid())
+    memory_usage = process.memory_info().rss / 1024 / 1024  # Memory usage in MB
+    print(f"Files {file_count} - Current memory usage: {memory_usage} MB")
 
-                # Check memory consumption
-                process = psutil.Process(os.getpid())
-                memory_usage = process.memory_info().rss / 1024 / 1024  # Memory usage in MB
-                print(f"Files {file_count} - Current memory usage: {memory_usage} MB")
+    # Check number of files or memory threshold was exceeded
+    if memory_usage > memory_threshold:
+        # if file_count >= n_files_threshold or (i == (len(shuffled_anp_sentiment_mapping) - 1) and len(X) >= 2000):
+        data = split_data(X, y)
+        train_and_save_model(data, model_path)
 
-                # Check number of files or memory threshold was exceeded
-                # if memory_usage > memory_threshold:
-                if file_count >= n_files_threshold or (i == (len(shuffled_anp_sentiment_mapping) - 1) and len(X) >= 2000):
-                    if first_time == True:
-                        train_and_save_model(X, y, model_path, True)
-                        first_time = False
-                    else:
-                        train_and_save_model(X, y, model_path, False)
-
-                    # Clear X and y to release memory
-                    X = []
-                    y = []
-                    # Reset counter
-                    file_count = 0
+        # Clear X and y to release memory
+        X = []
+        y = []
+        data = []
+        # Reset counter
+        file_count = 0
 
 # Train and save the final model
 #model_path = "sentiment_model.h5"
